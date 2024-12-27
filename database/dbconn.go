@@ -15,19 +15,23 @@ const (
 	dbname   = "jwt-auth-api"
 )
 
-var DB *gorm.DB
-var dsn = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
+var (
+	DB  *gorm.DB
+	dsn = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
+)
 
-func DBConn() {
+func DBConn() error {
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		fmt.Println("Error connecting to database: ", err)
-		return
+		return err
 	}
 	DB = db
 
 	if err = db.AutoMigrate(&models.User{}); err != nil {
 		fmt.Println("Error migrating database: ", err)
-		return
+		return err
 	}
+
+	return nil
 }

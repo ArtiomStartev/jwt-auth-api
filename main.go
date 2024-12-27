@@ -8,9 +8,12 @@ import (
 )
 
 func main() {
-	database.DBConn()
-
 	app := fiber.New()
+
+	if err := database.DBConn(); err != nil {
+		fmt.Println("Error connecting to database: ", err)
+		return
+	}
 
 	routes.Setup(app)
 

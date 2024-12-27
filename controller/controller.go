@@ -23,16 +23,26 @@ func User(ctx *fiber.Ctx) error {
 
 	if err != nil {
 		ctx.Status(fiber.StatusUnauthorized)
-		return ctx.JSON(fiber.Map{
-			"message": "Unauthenticated",
+		return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"data":  nil,
+			"error": "Unauthorized",
 		})
 	}
 
 	claims := token.Claims.(*jwt.StandardClaims)
 
-	database.DB.Where("id = ?", claims.Issuer).First(&user)
+	if err = database.DB.Where("id = ?", claims.Issuer).First(&user).Error; err != nil {
+		fmt.Println("Error fetching user: ", err)
+		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"data":  nil,
+			"error": "User not found",
+		})
+	}
 
-	return ctx.JSON(user)
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  user,
+		"error": nil,
+	})
 }
 
 func Register(ctx *fiber.Ctx) error {
@@ -40,13 +50,19 @@ func Register(ctx *fiber.Ctx) error {
 
 	if err := ctx.BodyParser(&data); err != nil {
 		fmt.Println("Error parsing request body: ", err)
-		return err
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": "Error parsing request body",
+		})
 	}
 
 	password, err := bcrypt.GenerateFromPassword([]byte(data["password"]), bcrypt.DefaultCost)
 	if err != nil {
 		fmt.Println("Error generating password hash: ", err)
-		return err
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": "Error registering user",
+		})
 	}
 
 	user := models.User{
@@ -55,9 +71,18 @@ func Register(ctx *fiber.Ctx) error {
 		Password: password,
 	}
 
-	database.DB.Create(&user)
+	if err = database.DB.Create(&user).Error; err != nil {
+		fmt.Println("Error creating user: ", err)
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": "Error registering user",
+		})
+	}
 
-	return ctx.JSON(user)
+	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"data":  user,
+		"error": nil,
+	})
 }
 
 func Login(ctx *fiber.Ctx) error {
@@ -66,24 +91,35 @@ func Login(ctx *fiber.Ctx) error {
 
 	if err := ctx.BodyParser(&data); err != nil {
 		fmt.Println("Error parsing request body: ", err)
-		return err
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": "Error parsing request body",
+		})
 	}
 
 	// Check if a user exists in the database by email
-	database.DB.Where("email = ?", data["email"]).First(&user)
+	if err := database.DB.Where("email = ?", data["email"]).First(&user).Error; err != nil {
+		fmt.Println("Error fetching user: ", err)
+		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"data":  nil,
+			"error": "User not found",
+		})
+	}
 
 	if user.ID == 0 {
 		ctx.Status(fiber.StatusNotFound)
-		return ctx.JSON(fiber.Map{
-			"message": "User not found",
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": "User not found",
 		})
 	}
 
 	// Compare password hash with the password provided by the user
 	if err := bcrypt.CompareHashAndPassword(user.Password, []byte(data["password"])); err != nil {
 		ctx.Status(fiber.StatusBadRequest)
-		return ctx.JSON(fiber.Map{
-			"message": "Incorrect password",
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": "Invalid password",
 		})
 	}
 
@@ -95,9 +131,9 @@ func Login(ctx *fiber.Ctx) error {
 
 	token, err := claims.SignedString([]byte(SecretKey))
 	if err != nil {
-		ctx.Status(fiber.StatusInternalServerError)
-		return ctx.JSON(fiber.Map{
-			"message": "Could not login",
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": "Error logging in",
 		})
 	}
 
@@ -110,8 +146,9 @@ func Login(ctx *fiber.Ctx) error {
 	}
 	ctx.Cookie(&cookie)
 
-	return ctx.JSON(fiber.Map{
-		"message": "success",
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  user,
+		"error": nil,
 	})
 }
 
@@ -125,7 +162,8 @@ func Logout(ctx *fiber.Ctx) error {
 	}
 	ctx.Cookie(&cookie)
 
-	return ctx.JSON(fiber.Map{
-		"message": "success",
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  nil,
+		"error": nil,
 	})
 }
