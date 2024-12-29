@@ -18,7 +18,7 @@ func main() {
 	routes.Setup(app)
 
 	if err := app.Listen(":8000"); err != nil {
-		fmt.Println("Error listening http requests on port :8000", err)
+		fmt.Println("Error starting server on port 8000: ", err)
 		return
 	}
 }

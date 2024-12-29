@@ -13,17 +13,17 @@ import (
 
 const SecretKey = "secret" // Secret key for JWT Token
 
-func User(ctx *fiber.Ctx) error {
+func User(c *fiber.Ctx) error {
 	var user models.User
-	cookie := ctx.Cookies("jwt")
+	cookie := c.Cookies("jwt")
 
 	token, err := jwt.ParseWithClaims(cookie, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte(SecretKey), nil // use the same secret key that was used to sign the token
 	})
 
 	if err != nil {
-		ctx.Status(fiber.StatusUnauthorized)
-		return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+		fmt.Println("Error parsing JWT Token: ", err)
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"data":  nil,
 			"error": "Unauthorized",
 		})
@@ -33,24 +33,24 @@ func User(ctx *fiber.Ctx) error {
 
 	if err = database.DB.Where("id = ?", claims.Issuer).First(&user).Error; err != nil {
 		fmt.Println("Error fetching user: ", err)
-		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"data":  nil,
 			"error": "User not found",
 		})
 	}
 
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"data":  user,
 		"error": nil,
 	})
 }
 
-func Register(ctx *fiber.Ctx) error {
+func Register(c *fiber.Ctx) error {
 	var data map[string]string
 
-	if err := ctx.BodyParser(&data); err != nil {
+	if err := c.BodyParser(&data); err != nil {
 		fmt.Println("Error parsing request body: ", err)
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"data":  nil,
 			"error": "Error parsing request body",
 		})
@@ -59,7 +59,7 @@ func Register(ctx *fiber.Ctx) error {
 	password, err := bcrypt.GenerateFromPassword([]byte(data["password"]), bcrypt.DefaultCost)
 	if err != nil {
 		fmt.Println("Error generating password hash: ", err)
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"data":  nil,
 			"error": "Error registering user",
 		})
@@ -73,42 +73,34 @@ func Register(ctx *fiber.Ctx) error {
 
 	if err = database.DB.Create(&user).Error; err != nil {
 		fmt.Println("Error creating user: ", err)
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"data":  nil,
 			"error": "Error registering user",
 		})
 	}
 
-	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"data":  user,
 		"error": nil,
 	})
 }
 
-func Login(ctx *fiber.Ctx) error {
+func Login(c *fiber.Ctx) error {
 	var user models.User
 	var data map[string]string
 
-	if err := ctx.BodyParser(&data); err != nil {
+	if err := c.BodyParser(&data); err != nil {
 		fmt.Println("Error parsing request body: ", err)
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"data":  nil,
 			"error": "Error parsing request body",
 		})
 	}
 
 	// Check if a user exists in the database by email
-	if err := database.DB.Where("email = ?", data["email"]).First(&user).Error; err != nil {
+	if err := database.DB.Where("email = ?", data["email"]).First(&user).Error; err != nil || user.ID == 0 {
 		fmt.Println("Error fetching user: ", err)
-		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"data":  nil,
-			"error": "User not found",
-		})
-	}
-
-	if user.ID == 0 {
-		ctx.Status(fiber.StatusNotFound)
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"data":  nil,
 			"error": "User not found",
 		})
@@ -116,8 +108,8 @@ func Login(ctx *fiber.Ctx) error {
 
 	// Compare password hash with the password provided by the user
 	if err := bcrypt.CompareHashAndPassword(user.Password, []byte(data["password"])); err != nil {
-		ctx.Status(fiber.StatusBadRequest)
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		fmt.Println("Error comparing password hash: ", err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"data":  nil,
 			"error": "Invalid password",
 		})
@@ -131,7 +123,8 @@ func Login(ctx *fiber.Ctx) error {
 
 	token, err := claims.SignedString([]byte(SecretKey))
 	if err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		fmt.Println("Error signing JWT Token: ", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"data":  nil,
 			"error": "Error logging in",
 		})
@@ -144,15 +137,15 @@ func Login(ctx *fiber.Ctx) error {
 		Expires:  time.Now().Add(time.Hour * 24),
 		HTTPOnly: true,
 	}
-	ctx.Cookie(&cookie)
+	c.Cookie(&cookie)
 
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"data":  user,
 		"error": nil,
 	})
 }
 
-func Logout(ctx *fiber.Ctx) error {
+func Logout(c *fiber.Ctx) error {
 	// Clear the JWT Token cookie
 	cookie := fiber.Cookie{
 		Name:     "jwt",
@@ -160,9 +153,9 @@ func Logout(ctx *fiber.Ctx) error {
 		Expires:  time.Now().Add(-time.Hour),
 		HTTPOnly: true,
 	}
-	ctx.Cookie(&cookie)
+	c.Cookie(&cookie)
 
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"data":  nil,
 		"error": nil,
 	})
